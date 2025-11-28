@@ -43,6 +43,7 @@ def load_and_process_data():
     
     for i, file_name in enumerate(file_names):
         # The first file should have the header, subsequent files should skip it
+        # This means the user MUST remove the header row from part2.csv and onwards
         header_row = 'infer' if i == 0 else None 
         
         try:
@@ -50,8 +51,14 @@ def load_and_process_data():
             df_part = pd.read_csv(file_name, header=header_row, encoding='utf-8')
             
         except FileNotFoundError:
-            st.warning(f"Data file not found: {file_name}. Please check file name and location in repository.")
-            continue # Skip to the next file
+            if i == 0:
+                # CRITICAL: If part 1 fails, we must stop and prompt the user to check the file name/path
+                st.error(f"FATAL ERROR: Primary data file ({file_name}) not found. Please verify the exact filename (case-sensitive) and location in your repository.")
+                return None, None, None, None, None, None, None
+            else:
+                # For subsequent parts, we warn but continue (assuming part 2 might be skipped, but part 1 is vital)
+                st.warning(f"Optional data file not found: {file_name}. Continuing with loaded data.")
+                continue
             
         except UnicodeDecodeError:
             try:
@@ -96,6 +103,12 @@ def load_and_process_data():
         data[col] = pd.to_numeric(data[col], errors='coerce')
         data.dropna(subset=[col], inplace=True) 
 
+    # --- FINAL VALIDATION ---
+    required_cols = ['Date', 'Domain', 'Location', 'Value', 'Transaction_count']
+    if not all(col in data.columns for col in required_cols):
+        st.error(f"Data validation failed. Missing one or more required columns after loading: {required_cols}. Check your file headers.")
+        return None, None, None, None, None, None, None
+    
     # --- PREPROCESSING & AGGREGATION (from original notebook) ---
     data['Month'] = data['Date'].dt.to_period('M')
     data['dayofweek'] = data['Date'].dt.day_name()
