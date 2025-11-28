@@ -32,6 +32,7 @@ def load_and_process_data():
     # ----------------------------------------------------
     # DATA LOADING (Using split CSV files to bypass GitHub size limit)
     # ----------------------------------------------------
+    # Define the sequence of files to load
     file_names = [
         "bankdataset_part1.csv",
         "bankdataset_part2.csv",
@@ -40,20 +41,41 @@ def load_and_process_data():
     
     data_frames = []
     
-    for file_name in file_names:
+    for i, file_name in enumerate(file_names):
+        # The first file should have the header, subsequent files should skip it
+        header_row = 'infer' if i == 0 else None 
+        
         try:
-            # Load the raw daily transaction data part
-            df_part = pd.read_csv(file_name)
-            data_frames.append(df_part)
+            # Attempt 1: UTF-8 encoding
+            df_part = pd.read_csv(file_name, header=header_row, encoding='utf-8')
+            
         except FileNotFoundError:
-            # Display a warning in the app if a file part is missing
-            st.warning(f"Data file not found: {file_name}. Skipping. Please ensure all parts are uploaded.")
+            st.warning(f"Data file not found: {file_name}. Please check file name and location in repository.")
+            continue # Skip to the next file
+            
+        except UnicodeDecodeError:
+            try:
+                # Attempt 2: Latin-1 encoding (for common non-standard exports)
+                df_part = pd.read_csv(file_name, header=header_row, encoding='latin-1')
+            except Exception as e:
+                st.error(f"Error loading {file_name}: Failed to load with UTF-8 and Latin-1 encoding.")
+                continue
+
         except Exception as e:
-            st.error(f"Error loading {file_name}: {e}. Please check the file format.")
-            return None, None, None, None, None, None, None
+            st.error(f"Critical error loading {file_name}. Details: {e}")
+            continue
+
+        # If it's not the first file, we need to assign the columns from the first successful load
+        if i > 0 and data_frames:
+            # Note: This ASSUMES bankdataset_part1.csv was the first one loaded.
+            df_part.columns = data_frames[0].columns 
+        
+        # Append the successfully loaded part
+        data_frames.append(df_part)
+            
             
     if not data_frames:
-        st.error("No data files were loaded. Please upload the split CSV files (e.g., bankdataset_part1.csv, bankdataset_part2.csv).")
+        st.error("No data files were loaded successfully. Please ensure the files exist and have the correct format.")
         return None, None, None, None, None, None, None
 
     # Concatenate all parts into a single DataFrame
@@ -483,4 +505,3 @@ st.markdown("""
 ---
 *Analysis performed using K-Means Clustering on Domain-City Aggregates.*
 """)
-
