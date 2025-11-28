@@ -25,21 +25,40 @@ sns.set_palette("Set2")
 @st.cache_data
 def load_and_process_data():
     """
-    Loads the actual bank dataset from the uploaded files,
+    Loads the actual bank dataset from the uploaded files (handling split files),
     performs necessary data cleansing, aggregation, and clustering steps.
-    
-    NOTE: Using 'bankdataset.xlsx - bankdataset.csv' for raw daily data.
     """
     
     # ----------------------------------------------------
-    # DATA LOADING (Using the actual provided CSV file)
+    # DATA LOADING (Using split CSV files to bypass GitHub size limit)
     # ----------------------------------------------------
-    try:
-        # Load the raw daily transaction data
-        data = pd.read_csv("bankdataset.xlsx - bankdataset.csv")
-    except Exception as e:
-        st.error(f"Error loading data: {e}. Please ensure 'bankdataset.xlsx - bankdataset.csv' is correctly formatted and accessible.")
+    file_names = [
+        "bankdataset_part1.csv",
+        "bankdataset_part2.csv",
+        # IMPORTANT: Add more part file names here if you split it into more pieces (e.g., "bankdataset_part3.csv")
+    ]
+    
+    data_frames = []
+    
+    for file_name in file_names:
+        try:
+            # Load the raw daily transaction data part
+            df_part = pd.read_csv(file_name)
+            data_frames.append(df_part)
+        except FileNotFoundError:
+            # Display a warning in the app if a file part is missing
+            st.warning(f"Data file not found: {file_name}. Skipping. Please ensure all parts are uploaded.")
+        except Exception as e:
+            st.error(f"Error loading {file_name}: {e}. Please check the file format.")
+            return None, None, None, None, None, None, None
+            
+    if not data_frames:
+        st.error("No data files were loaded. Please upload the split CSV files (e.g., bankdataset_part1.csv, bankdataset_part2.csv).")
         return None, None, None, None, None, None, None
+
+    # Concatenate all parts into a single DataFrame
+    data = pd.concat(data_frames, ignore_index=True)
+
 
     # Data Type Conversion and Cleaning
     data['Date'] = pd.to_datetime(data['Date'])
