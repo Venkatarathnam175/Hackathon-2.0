@@ -25,63 +25,35 @@ sns.set_palette("Set2")
 @st.cache_data
 def load_and_process_data():
     """
-    Simulates loading the bank dataset and performs all necessary
-    data processing, aggregation, and clustering steps.
+    Loads the actual bank dataset from the uploaded files,
+    performs necessary data cleansing, aggregation, and clustering steps.
     
-    NOTE: In a real-world scenario, replace this mock data section
-    with pd.read_excel("path/to/bankdataset.xlsx") and run the
-    preprocessing steps.
+    NOTE: Using 'bankdataset.xlsx - bankdataset.csv' for raw daily data.
     """
     
     # ----------------------------------------------------
-    # MOCK DATA CREATION (To ensure the app runs independently)
+    # DATA LOADING (Using the actual provided CSV file)
     # ----------------------------------------------------
-    N_LOCATIONS = 40
-    N_DOMAINS = 5
-    N_DAYS = 365
-    
-    locations = [f'City_{i}' for i in range(1, N_LOCATIONS + 1)]
-    domains = ['Investments', 'International', 'Medical', 'Restaurant', 'Public']
-    
-    dates = pd.to_datetime(pd.date_range(start='2024-01-01', periods=N_DAYS, freq='D'))
-    
-    # Create a DataFrame that mimics the scale of the original data (40 * 5 * 365 = 73000 rows)
-    # This ensures the subsequent aggregations have enough data points.
-    data_list = []
-    for day in dates:
-        for loc in locations:
-            for dom in domains:
-                # Value is high for Investments/International, mid for Medical/Restaurant, low for Public
-                base_value = 800000 + (100000 * domains.index(dom))
-                # Transaction count is stable across all
-                base_count = 1500
-                
-                value = np.random.normal(base_value, base_value * 0.1)
-                count = np.random.normal(base_count, base_count * 0.1)
-                
-                # Ensure values are positive
-                value = max(10000, value)
-                count = max(100, count)
-                
-                data_list.append({
-                    'Date': day,
-                    'Domain': dom,
-                    'Location': loc,
-                    'Value': value,
-                    'Transaction_count': count
-                })
+    try:
+        # Load the raw daily transaction data
+        data = pd.read_csv("bankdataset.xlsx - bankdataset.csv")
+    except Exception as e:
+        st.error(f"Error loading data: {e}. Please ensure 'bankdataset.xlsx - bankdataset.csv' is correctly formatted and accessible.")
+        return None, None, None, None, None, None, None
 
-    data = pd.DataFrame(data_list)
-    # ----------------------------------------------------
-    # END OF MOCK DATA CREATION
-    # ----------------------------------------------------
+    # Data Type Conversion and Cleaning
+    data['Date'] = pd.to_datetime(data['Date'])
     
-    
+    # Convert value and count columns to numeric, dropping any rows where this fails
+    for col in ['Value', 'Transaction_count']:
+        data[col] = pd.to_numeric(data[col], errors='coerce')
+        data.dropna(subset=[col], inplace=True) 
+
     # --- PREPROCESSING & AGGREGATION (from original notebook) ---
     data['Month'] = data['Date'].dt.to_period('M')
     data['dayofweek'] = data['Date'].dt.day_name()
     
-    # Domain-Level Summary
+    # 1. Domain-Level Summary
     domain_daily=data.groupby(['Domain','Date']).agg(daily_value=('Value','sum'),daily_count=('Transaction_count','sum')).reset_index()
     domain_summary= domain_daily.groupby(['Domain']).agg(
         avg_daily_value=('daily_value','mean'),
@@ -91,7 +63,7 @@ def load_and_process_data():
         days_recorded=('Date','nunique')
     ).reset_index().sort_values('total_value', ascending=False)
     
-    # Regional Performance
+    # 2. Regional Performance
     regional_perf = data.groupby(['Location']).agg(
         avg_txn_value=('Value','mean'),
         avg_txn_count=('Transaction_count','mean'),
@@ -100,7 +72,7 @@ def load_and_process_data():
         days_recorded=('Date','nunique')
     ).reset_index()
     
-    # Monthly & Daily Summary for Temporal Analysis
+    # 3. Monthly & Daily Summary for Temporal Analysis
     monthly_summary = data.groupby(['Month']).agg(
         total_value=('Value','sum'),
         total_transactions=('Transaction_count','sum')
@@ -113,7 +85,7 @@ def load_and_process_data():
         total_transactions=('Transaction_count','sum')
     ).reindex(week_order).reset_index()
     
-    # Domain-Location Daily Aggregation for Clustering
+    # 4. Domain-Location Daily Aggregation for Clustering
     daily_loca = data.groupby(['Domain','Location','Date']).agg(
         total_value=('Value','sum'),
         total_transactions=('Transaction_count','sum')
@@ -126,7 +98,7 @@ def load_and_process_data():
         total_transactions=('total_transactions','sum'),
         ).reset_index()
         
-    # Domain and Location wise performance (for section 4)
+    # 5. Domain and Location wise performance (for section 4)
     domain_loca_perf = data.groupby(['Domain','Location']).agg(
         avg_txn_value=('Value','mean'),
         avg_txn_count=('Transaction_count','mean'),
@@ -145,8 +117,7 @@ def load_and_process_data():
     kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
     dc['Cluster'] = kmeans.fit_predict(X_scaled)
     
-    # Map cluster labels (Note: Cluster IDs may change based on random_state/initialization,
-    # so we identify them by their mean performance post-clustering)
+    # Map cluster labels (identifying clusters by their mean total performance)
     cluster_means = dc.groupby('Cluster')[['total_value', 'total_transactions']].mean().sum(axis=1).sort_values(ascending=False)
     
     cluster_names = {
@@ -162,6 +133,11 @@ def load_and_process_data():
 # Load all pre-processed dataframes
 data, domain_summary, regional_perf, monthly_summary, daily_summary, dc, domain_loca_perf = load_and_process_data()
 
+# Check if data loading was successful
+if data is None:
+    st.stop()
+
+
 # --- HELPER FUNCTIONS FOR VISUALIZATION ---
 
 def plot_top_10_regional(df):
@@ -175,8 +151,8 @@ def plot_top_10_regional(df):
     axes[0].set_title('Top 10 Locations by Total Value (₹)', fontsize=16)
     axes[0].tick_params(axis='x', rotation=45)
     axes[0].set_xlabel("")
-    axes[0].set_ylabel("Total Value") # Keeping label simple since Billions are in the metric
-    axes[0].ticklabel_format(style='plain', axis='y') # Prevent scientific notation
+    axes[0].set_ylabel("Total Value") 
+    axes[0].ticklabel_format(style='plain', axis='y') 
 
     sns.barplot(x='Location', y='total_transactions', data=top10_count, ax=axes[1], palette="magma")
     axes[1].set_title('Top 10 Locations by Total Transactions (Volume)', fontsize=16)
@@ -231,9 +207,6 @@ def plot_domain_location_matrix(df):
         aggfunc='sum'
     )
     
-    # Optional: Normalize for better visual comparison
-    # pivot_table = pivot_table / pivot_table.max().max()
-
     plt.figure(figsize=(20, 15))
     sns.heatmap(
         pivot_table, 
@@ -279,7 +252,7 @@ if selection == "1. Overview":
     
     col1, col2, col3 = st.columns(3)
     
-    # UPDATED: Display Total Value in Billions
+    # Using actual data for metrics, displayed in Billions and Millions
     total_value = data['Value'].sum() / 1e9 # Billions
     total_txns = data['Transaction_count'].sum() / 1e6 # Millions
     unique_domains = data['Domain'].nunique()
@@ -319,11 +292,16 @@ elif selection == "2. Domain-Level Performance":
         column_order=['Domain', 'total_value', 'total_transactions', 'avg_daily_value', 'avg_daily_count', 'days_recorded']
     )
     
-    st.subheader("Observations (from Original Analysis)")
-    # UPDATED: Incorporating the user's specific observations
-    st.markdown("""
-    - All Domains show almost identical daily revenue (ranging between approximately ₹29.3 Crore/day to ₹29.5 Crore/day).
-    - All Domains show almost identical daily transactions volume (ranging between approximately 5.77 lakh/day to 5.81 lakh/day).
+    st.subheader("Observations")
+    # Using actual data for observations
+    min_daily_value = domain_summary['avg_daily_value'].min()
+    max_daily_value = domain_summary['avg_daily_value'].max()
+    min_daily_count = domain_summary['avg_daily_count'].min()
+    max_daily_count = domain_summary['avg_daily_count'].max()
+
+    st.markdown(f"""
+    - **Daily Revenue:** All Domains show nearly identical average daily revenue, ranging from **₹{min_daily_value:,.2f} to ₹{max_daily_value:,.2f}**.
+    - **Daily Transactions:** All Domains show highly similar average daily transaction volumes, ranging from **{min_daily_count:,.0f} to {max_daily_count:,.0f}** transactions per day.
     - All Domains are making consistent transactions.
     - This homogeneity suggests that the bank has a **well-diversified and stable transaction portfolio**, and is **not overly dependent on any single domain** for revenue or transaction volume.
     """)
@@ -389,14 +367,14 @@ elif selection == "5. Temporal and Seasonal Analysis":
     with col_temp1:
         st.subheader("Monthly Trends")
         st.markdown("""
-        - **Peaks:** July and December typically show the highest activity, indicating mid-year and year-end spending surges.
-        - **Dips:** February consistently shows the lowest transaction value/volume, possibly due to fewer days or post-holiday contraction.
+        - **Peaks:** The data clearly shows peak activity months, indicating periods of high consumer spending (e.g., mid-year and year-end surges).
+        - **Dips:** Consistent low transaction value/volume months suggest periods of post-holiday contraction or low commercial activity.
         """)
     with col_temp2:
         st.subheader("Daily Trends")
         st.markdown("""
-        - **Weekend Activity:** Saturday shows a slight but consistent rise in both value and volume, suggesting higher personal spending.
-        - **Weekday Stability:** Activity remains remarkably stable across all weekdays, showing balanced banking habits.
+        - **Weekend Activity:** There is a distinct trend showing a rise in activity on Saturdays, suggesting higher personal spending.
+        - **Weekday Stability:** Activity remains largely stable across all weekdays, showing balanced banking habits.
         """)
 
 
