@@ -81,6 +81,16 @@ def load_and_process_data():
     data['Month'] = data['Date'].dt.to_period('M')
     data['dayofweek'] = data['Date'].dt.day_name()
     
+    # Domain-Level Summary
+    domain_daily=data.groupby(['Domain','Date']).agg(daily_value=('Value','sum'),daily_count=('Transaction_count','sum')).reset_index()
+    domain_summary= domain_daily.groupby(['Domain']).agg(
+        avg_daily_value=('daily_value','mean'),
+        avg_daily_count=('daily_count','mean'),
+        total_value=('daily_value','sum'),
+        total_transactions=('daily_count','sum'), 
+        days_recorded=('Date','nunique')
+    ).reset_index().sort_values('total_value', ascending=False)
+    
     # Regional Performance
     regional_perf = data.groupby(['Location']).agg(
         avg_txn_value=('Value','mean'),
@@ -115,6 +125,16 @@ def load_and_process_data():
         total_value=('total_value','sum'),
         total_transactions=('total_transactions','sum'),
         ).reset_index()
+        
+    # Domain and Location wise performance (for section 4)
+    domain_loca_perf = data.groupby(['Domain','Location']).agg(
+        avg_txn_value=('Value','mean'),
+        avg_txn_count=('Transaction_count','mean'),
+        total_value=('Value','sum'),
+        total_transactions=('Transaction_count','sum'),
+        days_recorded=('Date','nunique')
+    ).reset_index()
+
 
     # --- K-MEANS CLUSTERING (k=3 based on notebook findings) ---
     X = dc[['avg_daily_value','avg_daily_count','total_value','total_transactions']]
@@ -137,10 +157,10 @@ def load_and_process_data():
 
     dc['Cluster_Label'] = dc['Cluster'].map(cluster_names)
     
-    return data, regional_perf, monthly_summary, daily_summary, dc
+    return data, domain_summary, regional_perf, monthly_summary, daily_summary, dc, domain_loca_perf
 
 # Load all pre-processed dataframes
-data, regional_perf, monthly_summary, daily_summary, dc = load_and_process_data()
+data, domain_summary, regional_perf, monthly_summary, daily_summary, dc, domain_loca_perf = load_and_process_data()
 
 # --- HELPER FUNCTIONS FOR VISUALIZATION ---
 
@@ -155,13 +175,15 @@ def plot_top_10_regional(df):
     axes[0].set_title('Top 10 Locations by Total Value (₹)', fontsize=16)
     axes[0].tick_params(axis='x', rotation=45)
     axes[0].set_xlabel("")
-    axes[0].set_ylabel("Total Value (Billions)")
+    axes[0].set_ylabel("Total Value") # Keeping label simple since Billions are in the metric
+    axes[0].ticklabel_format(style='plain', axis='y') # Prevent scientific notation
 
     sns.barplot(x='Location', y='total_transactions', data=top10_count, ax=axes[1], palette="magma")
     axes[1].set_title('Top 10 Locations by Total Transactions (Volume)', fontsize=16)
     axes[1].tick_params(axis='x', rotation=45)
     axes[1].set_xlabel("")
-    axes[1].set_ylabel("Total Transactions (Millions)")
+    axes[1].set_ylabel("Total Transactions")
+    axes[1].ticklabel_format(style='plain', axis='y')
 
     plt.tight_layout()
     return fig
@@ -174,30 +196,59 @@ def plot_temporal_trends(monthly_df, daily_df):
     sns.lineplot(x='Month', y='total_value', data=monthly_df, ax=axes[0, 0], marker='o', color='forestgreen')
     axes[0, 0].set_title('Monthly Total Value Trend (Seasonality)', fontsize=16)
     axes[0, 0].tick_params(axis='x', rotation=45)
-    axes[0, 0].set_ylabel("Total Value (Trillions)")
+    axes[0, 0].set_ylabel("Total Value")
     axes[0, 0].set_xlabel("")
 
     # Monthly Transaction Trend
     sns.lineplot(x='Month', y='total_transactions', data=monthly_df, ax=axes[0, 1], marker='o', color='darkorange')
     axes[0, 1].set_title('Monthly Total Transactions Trend (Volume)', fontsize=16)
     axes[0, 1].tick_params(axis='x', rotation=45)
-    axes[0, 1].set_ylabel("Total Transactions (Millions)")
+    axes[0, 1].set_ylabel("Total Transactions")
     axes[0, 1].set_xlabel("")
 
     # Daily Value Trend
     sns.barplot(x='dayofweek', y='total_value', data=daily_df, ax=axes[1, 0], palette="Blues_d")
     axes[1, 0].set_title('Daily Total Value Trend (Weekday vs. Weekend)', fontsize=16)
-    axes[1, 0].set_ylabel("Total Value (Trillions)")
+    axes[1, 0].set_ylabel("Total Value")
     axes[1, 0].set_xlabel("")
 
     # Daily Transaction Trend
     sns.barplot(x='dayofweek', y='total_transactions', data=daily_df, ax=axes[1, 1], palette="Reds_d")
     axes[1, 1].set_title('Daily Total Transactions Trend (Volume)', fontsize=16)
-    axes[1, 1].set_ylabel("Total Transactions (Millions)")
+    axes[1, 1].set_ylabel("Total Transactions")
     axes[1, 1].set_xlabel("")
 
     plt.tight_layout(pad=3.0)
     return fig
+    
+def plot_domain_location_matrix(df):
+    """Plots a heatmap of Total Value by Domain and Location."""
+    # Pivot for Heatmap visualization
+    pivot_table = df.pivot_table(
+        index='Location', 
+        columns='Domain', 
+        values='total_value', 
+        aggfunc='sum'
+    )
+    
+    # Optional: Normalize for better visual comparison
+    # pivot_table = pivot_table / pivot_table.max().max()
+
+    plt.figure(figsize=(20, 15))
+    sns.heatmap(
+        pivot_table, 
+        cmap="YlGnBu", 
+        annot=False, 
+        fmt=".1f",
+        linewidths=.5, 
+        cbar_kws={'label': 'Total Value'}
+    )
+    plt.title('Domain-Location Performance Matrix (Total Value)', fontsize=18)
+    plt.xlabel('Domain')
+    plt.ylabel('Location')
+    plt.tight_layout()
+    return plt.gcf()
+
 
 # --- STREAMLIT APP LAYOUT ---
 
@@ -207,10 +258,19 @@ st.subheader("Data-Driven Strategy for Domain-City Expansion")
 
 # --- SIDEBAR (Filtering and Navigation) ---
 st.sidebar.header("Navigation & Filters")
-menu = ["Overview & Core Metrics", "Regional & Temporal Analysis", "Performance Segmentation (Clustering)"]
+menu = [
+    "1. Overview",
+    "2. Domain-Level Performance",
+    "3. Regional-Wise Performance",
+    "4. Domain and Location Wise Performance",
+    "5. Temporal and Seasonal Analysis",
+    "6. Clustering and Its Results"
+]
 selection = st.sidebar.radio("Go to Section", menu)
 
-if selection == "Overview & Core Metrics":
+# --- NAVIGATION IMPLEMENTATION ---
+
+if selection == "1. Overview":
     
     # ----------------------------------------------------
     # SECTION 1: OVERVIEW & CORE METRICS
@@ -219,11 +279,12 @@ if selection == "Overview & Core Metrics":
     
     col1, col2, col3 = st.columns(3)
     
-    total_value = data['Value'].sum() / 1e12 # Trillions
+    # UPDATED: Display Total Value in Billions
+    total_value = data['Value'].sum() / 1e9 # Billions
     total_txns = data['Transaction_count'].sum() / 1e6 # Millions
     unique_domains = data['Domain'].nunique()
     
-    col1.metric("Total Value (Annual)", f"₹{total_value:,.2f} Trillion")
+    col1.metric("Total Value (Annual)", f"₹{total_value:,.2f} Billion")
     col2.metric("Total Transactions (Annual)", f"{total_txns:,.2f} Million")
     col3.metric("Domains Covered", unique_domains)
 
@@ -234,45 +295,91 @@ if selection == "Overview & Core Metrics":
     """)
     
     st.divider()
+    st.markdown("Use the navigation panel on the left to explore the detailed analysis.")
 
-    st.header("Domain-Level Summary")
-    domain_summary = data.groupby('Domain').agg(
-        Total_Value=('Value', 'sum'),
-        Total_Transactions=('Transaction_count', 'sum'),
-        Avg_Daily_Value=('Value', 'mean')
-    ).sort_values('Total_Value', ascending=False).reset_index()
+
+elif selection == "2. Domain-Level Performance":
     
+    # ----------------------------------------------------
+    # SECTION 2: DOMAIN-LEVEL PERFORMANCE
+    # ----------------------------------------------------
+    st.header("2. Domain-Level Performance")
+    st.markdown("Summary of aggregated transaction value and volume across all bank domains.")
+
+    domain_disp = domain_summary.copy()
     # Formatting for display
-    domain_summary['Total_Value'] = (domain_summary['Total_Value'] / 1e9).map('{:,.2f}B'.format)
-    domain_summary['Total_Transactions'] = (domain_summary['Total_Transactions'] / 1e6).map('{:,.2f}M'.format)
-    domain_summary['Avg_Daily_Value'] = (domain_summary['Avg_Daily_Value']).map('₹{:,.2f}'.format)
+    domain_disp['total_value'] = (domain_disp['total_value'] / 1e9).map('₹{:,.2f}B'.format)
+    domain_disp['total_transactions'] = (domain_disp['total_transactions'] / 1e6).map('{:,.2f}M'.format)
+    domain_disp['avg_daily_value'] = (domain_disp['avg_daily_value']).map('₹{:,.2f}'.format)
+    domain_disp['avg_daily_count'] = (domain_disp['avg_daily_count']).map('{:,.0f}'.format)
     
-    st.dataframe(domain_summary, use_container_width=True)
+    st.dataframe(
+        domain_disp, 
+        use_container_width=True,
+        column_order=['Domain', 'total_value', 'total_transactions', 'avg_daily_value', 'avg_daily_count', 'days_recorded']
+    )
     
-    st.info("""
-    **Observation:** All domains appear financially robust and consistently active. Performance differences are primarily found at the granular **Domain-City** level, which justifies the need for clustering.
+    st.subheader("Observations (from Original Analysis)")
+    # UPDATED: Incorporating the user's specific observations
+    st.markdown("""
+    - All Domains show almost identical daily revenue (ranging between approximately ₹29.3 Crore/day to ₹29.5 Crore/day).
+    - All Domains show almost identical daily transactions volume (ranging between approximately 5.77 lakh/day to 5.81 lakh/day).
+    - All Domains are making consistent transactions.
+    - This homogeneity suggests that the bank has a **well-diversified and stable transaction portfolio**, and is **not overly dependent on any single domain** for revenue or transaction volume.
     """)
 
 
-elif selection == "Regional & Temporal Analysis":
+elif selection == "3. Regional-Wise Performance":
     
     # ----------------------------------------------------
-    # SECTION 2: REGIONAL & TEMPORAL ANALYSIS
+    # SECTION 3: REGIONAL-WISE PERFORMANCE
     # ----------------------------------------------------
-    
-    st.header("2. Regional Performance: Top Locations")
+    st.header("3. Regional-Wise Performance")
     st.markdown("Identification of the top 10 strongest cities based on overall transaction volume and value.")
     
     regional_plot = plot_top_10_regional(regional_perf)
     st.pyplot(regional_plot)
     
     st.info("""
-    **Insight:** While overall regional performance is stable, certain locations serve as critical hubs for large-value and high-volume transactions, warranting further investment.
+    **Insight:** While overall regional performance is highly consistent, certain locations serve as critical hubs for transactions. The high degree of uniformity suggests strong operational consistency and balanced merchant penetration across the bank's network.
     """)
-    
-    st.divider()
 
-    st.header("3. Temporal & Seasonal Trends")
+elif selection == "4. Domain and Location Wise Performance":
+    
+    # ----------------------------------------------------
+    # SECTION 4: DOMAIN AND LOCATION WISE PERFORMANCE
+    # ----------------------------------------------------
+    st.header("4. Domain and Location Wise Performance")
+    st.markdown("A deep dive into the performance of every combination of Domain and City, highlighting where specific domains thrive.")
+
+    st.subheader("Top 10 Domain-City Pairs by Total Value")
+    top_pairs = domain_loca_perf.nlargest(10, 'total_value').copy()
+    
+    # Formatting for display
+    top_pairs['total_value'] = (top_pairs['total_value'] / 1e6).map('₹{:,.2f}M'.format)
+    top_pairs['total_transactions'] = (top_pairs['total_transactions'] / 1e3).map('{:,.2f}K'.format)
+    
+    st.dataframe(
+        top_pairs[['Domain', 'Location', 'total_value', 'total_transactions']], 
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("Performance Matrix (Heatmap)")
+    st.markdown("This heatmap visually identifies the strongest Domain-Location pairs based on total transaction value.")
+    
+    heatmap_fig = plot_domain_location_matrix(domain_loca_perf)
+    st.pyplot(heatmap_fig)
+
+    st.info("The strongest individual Domain-City pairs are the key targets for strategic marketing and partnership deepening.")
+
+
+elif selection == "5. Temporal and Seasonal Analysis":
+    
+    # ----------------------------------------------------
+    # SECTION 5: TEMPORAL AND SEASONAL ANALYSIS
+    # ----------------------------------------------------
+    st.header("5. Temporal and Seasonal Analysis")
     st.markdown("Analyzing how transaction volume and value fluctuate across months and days of the week.")
     
     temporal_plot = plot_temporal_trends(monthly_summary, daily_summary)
@@ -293,14 +400,14 @@ elif selection == "Regional & Temporal Analysis":
         """)
 
 
-elif selection == "Performance Segmentation (Clustering)":
+elif selection == "6. Clustering and Its Results":
     
     # ----------------------------------------------------
-    # SECTION 3: PERFORMANCE SEGMENTATION (CLUSTERING)
+    # SECTION 6: CLUSTERING AND ITS RESULTS
     # ----------------------------------------------------
     
-    st.header("4. Domain-City Performance Segmentation")
-    st.markdown("Using K-Means clustering (k=3) on daily averages and total metrics to categorize every Domain-City pair.")
+    st.header("6. Clustering and Its Results")
+    st.markdown("Using K-Means clustering (k=3) on daily averages and total metrics to categorize every Domain-City pair into performance segments.")
     
     # Summary of Clusters
     cluster_summary = dc.groupby('Cluster_Label').agg(
