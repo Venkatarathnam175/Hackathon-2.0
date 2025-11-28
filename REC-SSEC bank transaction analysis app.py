@@ -464,11 +464,11 @@ def load_and_process_data():
     dc = DC_CLUSTERING_DATA
     domain_loca_perf = DOMAIN_LOCA_PERF_DATA
     
-    # Placeholder for the raw data used only for the metric calculation in Section 1
+    # FIX: Create a placeholder DataFrame with consistent single-element arrays
     data = pd.DataFrame({
         'Value': [TOTAL_VALUE_RUPEES], 
         'Transaction_count': [TOTAL_TXNS_COUNT], 
-        'Domain': ['PUBLIC'] * UNIQUE_DOMAINS
+        'Domain': ['PLACEHOLDER']
     })
     
     return data, domain_summary, regional_perf, monthly_summary, daily_summary, dc, domain_loca_perf
@@ -768,7 +768,7 @@ elif selection == "6. Clustering and Its Results":
         cluster_summary = cluster_summary.sort_values('Cluster_Label')
     
         # Formatting
-        cluster_summary['Avg_Daily_Value_Mean'] = (cluster_summary['Avg_Daily_Value_Mean']).map('₹{:,.0f}'.format)
+        cluster_summary['Avg_Daily_Value_Mean'] = (cluster_summary['Avg_daily_value']).map('₹{:,.0f}'.format)
         cluster_summary['Total_Value_Mean'] = (cluster_summary['Total_Value_Mean'] / 1e9).map('₹{:,.2f}B'.format)
         
         st.subheader("Cluster Profiles")
