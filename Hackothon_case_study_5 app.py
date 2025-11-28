@@ -83,7 +83,13 @@ def load_and_process_data():
 
 
     # Data Type Conversion and Cleaning
-    data['Date'] = pd.to_datetime(data['Date'])
+    
+    # FIX: Use errors='coerce' to turn invalid date strings (like stray headers) into NaT
+    # This prevents the ValueError and allows us to drop the bad rows later.
+    data['Date'] = pd.to_datetime(data['Date'], errors='coerce')
+    
+    # Drop rows where Date conversion failed (likely stray headers)
+    data.dropna(subset=['Date'], inplace=True)
     
     # Convert value and count columns to numeric, dropping any rows where this fails
     for col in ['Value', 'Transaction_count']:
